@@ -4,21 +4,19 @@
 
 Four contributors total:
 
-1. Project lead / integration — architecture, reviews, release coordination.
-2. Frontend — React UI, onboarding, shared-user screens, shopping and approval experience.
-3. Backend — Node.js APIs, data model, identity, authorization, notifications.
-4. AI and payments — product discovery and purchase-intent orchestration; PayPal feasibility research and payment adapter in coordination with the backend owner.
+1. **Project lead / integration (you):** architecture, product decisions, reviews, release coordination, and final integration.
+2. **Frontend contributor:** React UI, onboarding, delegated-user screens, shopping, and approval experience.
+3. **Backend / PayPal contributor:** Node.js APIs, data model, identity, authorization, notifications, and PayPal API feasibility/payment adapter.
+4. **AI agent contributor:** product discovery, comparison, structured purchase-intent orchestration, and safety testing.
 
-The project lead may reassign or split the AI and payments work as the implementation grows.
+## Assigned branches
 
-## Branch naming
+- Project lead: `main` (integration only; do not develop directly on main)
+- Frontend: `feature/frontend`
+- Backend / PayPal: `feature/backend-payments`
+- AI agent: `feature/ai-agent`
 
-- `feature/frontend`
-- `feature/backend`
-- `feature/ai-agent`
-- `feature/payment`
-- `docs/<short-topic>`
-- `fix/<short-topic>`
+For additional work use `docs/<short-topic>` or `fix/<short-topic>`.
 
 ## Workflow
 
