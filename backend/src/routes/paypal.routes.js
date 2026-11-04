@@ -9,7 +9,7 @@ import { requireAuth } from '../middleware/require-auth.js';
 const router = Router();
 const createOrderSchema = z.object({
   itemName: z.string().trim().min(1).max(120),
-  amount: z.string().regex(/^\\d{1,7}\\.\\d{2}$/),
+  amount: z.string().regex(/^\d{1,7}\.\d{2}$/),
 });
 
 let accessToken;
