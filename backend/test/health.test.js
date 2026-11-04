@@ -13,7 +13,7 @@ before(async () => {
   server = app.listen(0);
   await new Promise(resolve => server.once('listening', resolve));
   const address = server.address();
-  baseUrl = \`http://127.0.0.1:\${address.port}\`;
+  baseUrl = 'http://127.0.0.1:' + address.port;
 });
 
 after(async () => {
@@ -21,7 +21,7 @@ after(async () => {
 });
 
 test('GET /health returns service status without requiring a database connection', async () => {
-  const response = await fetch(\`\${baseUrl}/health\`);
+  const response = await fetch(baseUrl + '/health');
   assert.equal(response.status, 200);
   assert.deepEqual(await response.json(), { status: 'ok', service: 'buypal-api' });
 });

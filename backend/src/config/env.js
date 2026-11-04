@@ -2,7 +2,7 @@ import 'dotenv/config';
 
 const required = ['MONGODB_URI'];
 for (const key of required) {
-  if (!process.env[key]) throw new Error(\`Missing required environment variable: \${key}\`);
+  if (!process.env[key]) throw new Error('Missing required environment variable: ' + key);
 }
 
 const paypalMode = process.env.PAYPAL_MODE || 'sandbox';

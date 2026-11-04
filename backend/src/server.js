@@ -7,15 +7,13 @@ let server;
 async function start() {
   await connectDatabase();
   server = app.listen(env.port, () => {
-    console.log(\`BuyPal API listening on port \${env.port}\`);
+    console.log('BuyPal API listening on port ' + env.port);
   });
 }
 
 async function shutdown(signal) {
-  console.log(\`\${signal} received; shutting down BuyPal API.\`);
-  if (server) {
-    await new Promise(resolve => server.close(resolve));
-  }
+  console.log(signal + ' received; shutting down BuyPal API.');
+  if (server) await new Promise(resolve => server.close(resolve));
   await disconnectDatabase();
   process.exit(0);
 }

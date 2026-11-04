@@ -11,14 +11,8 @@ export async function connectDatabase() {
     maxPoolSize: 10,
     autoIndex: !env.isProduction,
   });
-
-  // Explicitly create declared unique and TTL indexes for production deployments too.
-  await Promise.all([
-    User.createIndexes(),
-    Session.createIndexes(),
-    PayPalOrder.createIndexes(),
-  ]);
-  console.log(\`MongoDB connected: \${mongoose.connection.name}\`);
+  await Promise.all([User.createIndexes(), Session.createIndexes(), PayPalOrder.createIndexes()]);
+  console.log('MongoDB connected: ' + mongoose.connection.name);
   return mongoose.connection;
 }
 

@@ -21,16 +21,12 @@ async function getAccessToken() {
     error.status = 503;
     throw error;
   }
-
   if (accessToken && Date.now() < tokenExpiresAt - 60_000) return accessToken;
 
-  const basic = Buffer.from(\`\${env.paypal.clientId}:\${env.paypal.clientSecret}\`).toString('base64');
-  const response = await fetch(\`\${env.paypal.baseUrl}/v1/oauth2/token\`, {
+  const basic = Buffer.from(env.paypal.clientId + ':' + env.paypal.clientSecret).toString('base64');
+  const response = await fetch(env.paypal.baseUrl + '/v1/oauth2/token', {
     method: 'POST',
-    headers: {
-      Authorization: \`Basic \${basic}\`,
-      'Content-Type': 'application/x-www-form-urlencoded',
-    },
+    headers: { Authorization: 'Basic ' + basic, 'Content-Type': 'application/x-www-form-urlencoded' },
     body: 'grant_type=client_credentials',
   });
   const data = await response.json();
@@ -40,17 +36,16 @@ async function getAccessToken() {
     error.status = 502;
     throw error;
   }
-
   accessToken = data.access_token;
   tokenExpiresAt = Date.now() + Number(data.expires_in || 300) * 1000;
   return accessToken;
 }
 
 async function paypalCall(path, token, { method = 'GET', body, requestId } = {}) {
-  const response = await fetch(\`\${env.paypal.baseUrl}\${path}\`, {
+  const response = await fetch(env.paypal.baseUrl + path, {
     method,
     headers: {
-      Authorization: \`Bearer \${token}\`,
+      Authorization: 'Bearer ' + token,
       'Content-Type': 'application/json',
       ...(requestId ? { 'PayPal-Request-Id': requestId } : {}),
     },
@@ -88,8 +83,8 @@ router.post('/orders', requireAuth, asyncHandler(async (req, res) => {
       application_context: {
         brand_name: 'BuyPal',
         user_action: 'PAY_NOW',
-        return_url: \`\${env.frontendOrigin}/checkout/paypal/return\`,
-        cancel_url: \`\${env.frontendOrigin}/checkout/paypal/cancel\`,
+        return_url: env.frontendOrigin + '/checkout/paypal/return',
+        cancel_url: env.frontendOrigin + '/checkout/paypal/cancel',
       },
     },
   });
@@ -109,7 +104,6 @@ router.post('/orders', requireAuth, asyncHandler(async (req, res) => {
     currency: env.paypal.currency,
     status: order.status || 'CREATED',
   });
-
   return res.status(201).json({ orderId: order.id, status: order.status, approvalUrl });
 }));
 
@@ -127,12 +121,11 @@ router.post('/orders/:orderId/capture', requireAuth, asyncHandler(async (req, re
   }
 
   const token = await getAccessToken();
-  const current = await paypalCall(\`/v2/checkout/orders/\${encodeURIComponent(req.params.orderId)}\`, token);
+  const current = await paypalCall('/v2/checkout/orders/' + encodeURIComponent(req.params.orderId), token);
   if (current.status !== 'APPROVED') {
     return res.status(409).json({ message: 'The PayPal buyer has not approved this order yet.', status: current.status });
   }
 
-  // Claim the capture atomically so two concurrent requests cannot both start it.
   const claimed = await PayPalOrder.findOneAndUpdate(
     { _id: saved._id, status: { $nin: ['COMPLETED', 'CAPTURING'] } },
     { $set: { status: 'CAPTURING' } },
@@ -148,19 +141,19 @@ router.post('/orders/:orderId/capture', requireAuth, asyncHandler(async (req, re
 
   try {
     const capture = await paypalCall(
-      \`/v2/checkout/orders/\${encodeURIComponent(req.params.orderId)}/capture\`,
+      '/v2/checkout/orders/' + encodeURIComponent(req.params.orderId) + '/capture',
       token,
-      { method: 'POST', body: {}, requestId: \`buypal-\${req.params.orderId}\`.slice(0, 38) },
+      { method: 'POST', body: {}, requestId: ('buypal-' + req.params.orderId).slice(0, 38) },
     );
     const status = capture.status || 'PENDING';
     const captureId = capture.purchase_units?.[0]?.payments?.captures?.[0]?.id || null;
-    await PayPalOrder.updateOne(
-      { _id: saved._id },
-      { $set: { status, captureId } },
-    );
+    await PayPalOrder.updateOne({ _id: saved._id }, { $set: { status, captureId } });
     return res.json({ orderId: capture.id, status });
   } catch (error) {
-    await PayPalOrder.updateOne({ _id: saved._id, status: 'CAPTURING' }, { $set: { status: 'APPROVED' } });
+    await PayPalOrder.updateOne(
+      { _id: saved._id, status: 'CAPTURING' },
+      { $set: { status: 'APPROVED' } },
+    );
     throw error;
   }
 }));
