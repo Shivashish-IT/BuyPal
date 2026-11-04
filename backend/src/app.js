@@ -6,6 +6,7 @@ import { rateLimit } from 'express-rate-limit';
 import { env } from './config/env.js';
 import authRoutes from './routes/auth.routes.js';
 import paypalRoutes from './routes/paypal.routes.js';
+import circleRoutes from './routes/circle.routes.js';
 
 export const app = express();
 
@@ -39,6 +40,7 @@ const paymentLimiter = rateLimit({
 });
 app.use('/api/v1/auth', authLimiter, authRoutes);
 app.use('/api/v1/paypal', paymentLimiter, paypalRoutes);
+app.use('/api/v1/circles', circleRoutes);
 
 app.use((_req, res) => res.status(404).json({ message: 'Route not found.' }));
 
