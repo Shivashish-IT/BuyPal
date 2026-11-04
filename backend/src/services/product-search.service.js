@@ -47,7 +47,7 @@ export async function searchProducts({ query, category, maxPrice, currency = 'IN
       const verifiedProducts = products
         .filter(product => product && product.verified === true)
         .filter(product => typeof product.name === 'string' && product.name.trim())
-        .filter(product => typeof product.url === 'string' && product.url.startsWith(platform.website))
+        .filter(product => {\n          try {\n            const productUrl = new URL(product.url);\n            const retailerHost = new URL(platform.website).hostname;\n            return productUrl.protocol === 'https:' && (productUrl.hostname === retailerHost || productUrl.hostname.endsWith('.' + retailerHost));\n          } catch {\n            return false;\n          }\n        })
         .filter(product => typeof product.price === 'number' && Number.isFinite(product.price) && product.price >= 0)
         .filter(product => !maxPrice || product.price <= maxPrice)
         .filter(product => !product.currency || product.currency === currency)
