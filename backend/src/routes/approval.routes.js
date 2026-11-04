@@ -10,9 +10,9 @@ const router = Router();
 router.use(requireAuth);
 
 const requestSchema = z.object({
-  circleId: z.string().regex(/^[a-f\\d]{24}$/i),
+  circleId: z.string().regex(/^[a-f\d]{24}$/i),
   itemName: z.string().trim().min(1).max(120),
-  amount: z.string().regex(/^\\d{1,7}\\.\\d{2}$/).refine(v => Number(v) > 0),
+  amount: z.string().regex(/^\d{1,7}\.\d{2}$/).refine(v => Number(v) > 0),
   currency: z.string().length(3).transform(v => v.toUpperCase()),
 });
 const decisionSchema = z.object({ decision: z.enum(['approve', 'reject']), note: z.string().trim().max(300).optional() });
