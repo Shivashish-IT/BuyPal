@@ -10,7 +10,7 @@ const demoProducts = [
 ];
 
 export async function searchProducts({ query, category, maxPrice, currency = 'INR', limit = 10 }) {
-  const terms = query.toLowerCase().split(/\\s+/).filter(Boolean);
+  const terms = query.toLowerCase().split(/\s+/).filter(Boolean);
   return demoProducts
     .filter(product => product.currency === currency)
     .filter(product => !category || product.category === category.toLowerCase())
