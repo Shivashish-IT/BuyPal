@@ -8,6 +8,7 @@ Base path: `/api/v1`
 
 | UI route | BuyPal endpoint(s) | Purpose |
 |---|---|---|
+| Authentication | `POST /auth/register`, `POST /auth/login`, `POST /auth/logout`, `GET /auth/session`, `POST /auth/password/reset-request`, `POST /auth/password/reset`, `POST /auth/password/change` | Registration, sign-in, session checks, sign-out and password recovery/change |
 | Dashboard | `GET /dashboard/summary`, `GET /transactions?limit=5`, `GET /circles?mine=true`, `GET /approvals?status=pending` | Wallet snapshot, recent activity, circle summary, pending approvals |
 | My Wallet | `GET /wallet`, `GET /wallet/activity`, `GET /payment-methods`, `POST /wallet/topups`, `POST /wallet/withdrawals`, `PATCH /wallet/limits` | Display ledger and payment methods; create provider-backed intents; configure limits |
 | Send & Receive | `POST /payment-intents`, `GET /contacts`, `POST /receive-requests`, `GET /receive-requests/:id` | Resolve recipient, create a payment intent, create a payment request/QR payload |
