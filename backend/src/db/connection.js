@@ -9,11 +9,15 @@ export async function connectDatabase() {
   await mongoose.connect(env.mongodbUri, {
     serverSelectionTimeoutMS: 10_000,
     maxPoolSize: 10,
-    autoIndex: env.isProduction ? false : true,
+    autoIndex: !env.isProduction,
   });
 
-  // Ensure unique and TTL indexes exist even when automatic index creation is disabled.
-  await Promise.all([User.init(), Session.init(), PayPalOrder.init()]);
+  // Explicitly create declared unique and TTL indexes for production deployments too.
+  await Promise.all([
+    User.createIndexes(),
+    Session.createIndexes(),
+    PayPalOrder.createIndexes(),
+  ]);
   console.log(\`MongoDB connected: \${mongoose.connection.name}\`);
   return mongoose.connection;
 }
