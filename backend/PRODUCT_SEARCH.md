@@ -1,30 +1,37 @@
-# BuyPal product discovery (initial provider)
+# BuyPal verified product discovery
 
-The first product-search integration uses a small local demo catalogue. It allows the team to build and test the shopping journey without API credentials or usage fees.
+BuyPal uses a verified-only policy. It does not scrape retailer pages, invent listings, or fall back to a demo catalogue.
 
-## Endpoint
+## Built-in trusted platforms
 
-`GET /api/v1/products/search?q=laptop&currency=INR&maxPrice=70000&limit=10`
+- Amazon India — official Creators API; requires Amazon Associates enrolment and API eligibility/credentials.
+- Flipkart — official Affiliate API; requires affiliate registration and API access.
+- Swiggy — official developer/Builders Club APIs; requires the relevant API credentials and production access where applicable.
+- Zomato and Blinkit — require an authorised partner integration. BuyPal will not assume that an undocumented consumer search API exists.
 
-Authentication is required. Optional query parameters:
-- `q`: free-text search (up to 100 characters)
-- `category`: category filter
-- `maxPrice`: maximum numeric price
-- `currency`: three-letter currency code; defaults to INR
-- `limit`: 1–20; defaults to 10
+A platform being on the trusted list does not mean its API is already connected. The platform status endpoint reports that distinction.
 
-The response labels results with `source: "demo"` and `priceIsLive: false`. These are illustrative entries, not current retailer inventory or offers.
+## Endpoints
 
-## Checkout handoff
+- `GET /api/v1/products/platforms` — list trusted platforms and connection status.
+- `GET /api/v1/products/search?q=Samsung%2025W%20charger&currency=INR&limit=10` — search connected providers.
 
-1. The user searches and selects a returned product.
-2. The frontend displays the demo price and clearly identifies the demo source.
-3. The frontend creates a purchase request through `POST /api/v1/approvals` using the selected product name, price, currency, and the user's Circle ID.
-4. The existing approval route checks Circle membership, permissions, per-transaction limit, and daily limit.
-5. Only an approved request can be passed to the PayPal order endpoint.
+Authentication is required. Search requires a non-empty query. Optional filters are `category`, `maxPrice`, `currency` and `limit`.
 
-Never trust a price submitted by the browser as a live offer. A production provider integration must fetch and validate the current offer server-side before creating a purchase request.
+## Verified-result contract
 
-## Replacing the provider
+A provider must be backed by an authorised retailer API or partner integration and return `verified: true`, a retailer-hosted product URL, a valid numeric price and currency. The aggregator filters out results that do not meet this contract. Providers must not set `verified: true` for scraped or guessed data.
 
-Implement the same `searchProducts({ query, category, maxPrice, currency, limit })` contract in a retailer/API adapter, then switch the service implementation. Keep provider-specific API keys on the backend and never expose them to the frontend.
+When a platform is not connected, errors, or returns no verified match, its result list remains empty and the response explains why. BuyPal never silently substitutes another source.
+
+## Recommendation policy
+
+Current ranking is by listed price among verified results. Before checkout, the UI must clearly show the retailer, exact listing, last checked time, delivery availability/fees if supplied by the provider, and direct product link. Do not claim the cheapest final payable option unless comparable delivery fees and discounts are available from every compared provider.
+
+## Provider integration
+
+Use `registerProductProvider(platformId, { search })` to register an authorised provider implementation. Keep credentials server-side. Do not register browser scraping, unofficial private endpoints, or static mock catalogues as verified providers.
+
+## Current implementation status
+
+The trusted-platform registry, fail-closed aggregator, API endpoints and tests are implemented. No retailer credentials or authorised partner connections have been supplied yet, so the API correctly returns zero verified products until a provider is integrated and connected.
