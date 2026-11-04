@@ -30,3 +30,21 @@ Set the backend environment variables:
 - `FRONTEND_ORIGIN`
 
 Never expose the client secret in frontend environment variables or browser code.
+
+## Webhook reconciliation
+
+Configure `PAYPAL_WEBHOOK_ID` from the webhook created in the PayPal Developer Dashboard. Register this listener URL in the app's Sandbox webhook settings:
+
+`https://YOUR_PUBLIC_BACKEND_HOST/api/v1/paypal/webhooks`
+
+Subscribe to at least:
+
+- `PAYMENT.CAPTURE.COMPLETED`
+- `PAYMENT.CAPTURE.PENDING`
+- `PAYMENT.CAPTURE.DENIED`
+- `PAYMENT.CAPTURE.REFUNDED`
+- `PAYMENT.CAPTURE.REVERSED`
+
+The unauthenticated webhook route verifies PayPal's transmission headers and event body with PayPal's `verify-webhook-signature` API before processing. Event IDs are stored uniquely so PayPal retries do not apply the same event twice. Capture events update the matching local order using the related PayPal order ID.
+
+For local testing, expose the backend through a public HTTPS tunnel and use that URL in the PayPal Developer Dashboard. Never disable signature verification in production. Monitor webhook events marked `FAILED`; an operational retry/reconciliation worker is still required for failures after event receipt.
