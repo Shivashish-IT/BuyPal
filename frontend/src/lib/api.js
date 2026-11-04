@@ -29,6 +29,22 @@ const patch = (path, body) => request(path, { method: 'PATCH', body });
 const del = path => request(path, { method: 'DELETE' });
 
 export const api = {
+  auth: {
+    login: credentials => post('/auth/login', credentials),
+    register: data => post('/auth/register', data),
+    logout: () => post('/auth/logout', {}),
+    session: () => get('/auth/session'),
+    requestPasswordReset: email => post('/auth/password/reset-request', { email }),
+    resetPassword: data => post('/auth/password/reset', data),
+    changePassword: data => post('/auth/password/change', data),
+  },
+  security: {
+    sessions: () => get('/security/sessions'),
+    revokeSession: id => post(`/security/sessions/${encodeURIComponent(id)}/revoke`, {}),
+  },
+  search: {
+    all: query => get(`/search?q=${encodeURIComponent(query)}`),
+  },
   dashboard: {
     summary: () => get('/dashboard/summary'),
   },
@@ -47,6 +63,7 @@ export const api = {
   payments: {
     createIntent: (data, idempotencyKey) => post('/payment-intents', data, { 'Idempotency-Key': idempotencyKey }),
     createReceiveRequest: data => post('/receive-requests', data),
+    getReceiveRequest: id => get(`/receive-requests/${encodeURIComponent(id)}`),
   },
   contacts: {
     list: () => get('/contacts'),
@@ -56,6 +73,10 @@ export const api = {
     get: id => get(`/circles/${encodeURIComponent(id)}`),
     create: data => post('/circles', data),
     invite: (id, data) => post(`/circles/${encodeURIComponent(id)}/invitations`, data),
+    updateMemberPermissions: (circleId, memberId, data) => patch(`/circles/${encodeURIComponent(circleId)}/members/${encodeURIComponent(memberId)}/permissions`, data),
+    removeMember: (circleId, memberId) => del(`/circles/${encodeURIComponent(circleId)}/members/${encodeURIComponent(memberId)}`),
+    policy: id => get(`/circles/${encodeURIComponent(id)}/policy`),
+    updatePolicy: (id, data) => patch(`/circles/${encodeURIComponent(id)}/policy`, data),
     expenses: id => get(`/circles/${encodeURIComponent(id)}/expenses`),
     createExpense: (id, data) => post(`/circles/${encodeURIComponent(id)}/expenses`, data),
   },
