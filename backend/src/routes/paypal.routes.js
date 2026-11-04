@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto';
 import mongoose from 'mongoose';
 import { z } from 'zod';
 import { PayPalOrder } from '../models/PayPalOrder.js';
+import { PayPalWebhookEvent } from '../models/PayPalWebhookEvent.js';
 import { PurchaseApproval } from '../models/PurchaseApproval.js';
 import { Circle } from '../models/Circle.js';
 import { env } from '../config/env.js';
@@ -10,6 +11,90 @@ import { asyncHandler } from '../utils/async-handler.js';
 import { requireAuth } from '../middleware/require-auth.js';
 
 const router = Router();
+
+// PayPal calls this endpoint directly. Verify the signature before trusting the event.
+router.post('/webhooks', asyncHandler(async (req, res) => {
+  const webhookId = env.paypal.webhookId;
+  if (!webhookId) {
+    return res.status(503).json({ message: 'PayPal webhook is not configured.' });
+  }
+
+  const headers = req.headers;
+  const transmissionId = headers['paypal-transmission-id'];
+  const transmissionTime = headers['paypal-transmission-time'];
+  const transmissionSig = headers['paypal-transmission-sig'];
+  const certUrl = headers['paypal-cert-url'];
+  const authAlgo = headers['paypal-auth-algo'];
+  if (!transmissionId || !transmissionTime || !transmissionSig || !certUrl || !authAlgo) {
+    return res.status(400).json({ message: 'Missing PayPal transmission headers.' });
+  }
+
+  const access = await token();
+  const verification = await paypal('/v1/notifications/verify-webhook-signature', access, {
+    method: 'POST',
+    body: {
+      auth_algo: authAlgo,
+      cert_url: certUrl,
+      transmission_id: transmissionId,
+      transmission_sig: transmissionSig,
+      transmission_time: transmissionTime,
+      webhook_id: webhookId,
+      webhook_event: req.body,
+    },
+  });
+  if (verification.verification_status !== 'SUCCESS') {
+    return res.status(400).json({ message: 'PayPal webhook signature verification failed.' });
+  }
+
+  const event = req.body;
+  if (!event?.id || !event?.event_type) {
+    return res.status(400).json({ message: 'Invalid PayPal webhook event.' });
+  }
+
+  try {
+    await PayPalWebhookEvent.create({
+      eventId: event.id,
+      eventType: event.event_type,
+      status: 'RECEIVED',
+    });
+  } catch (error) {
+    if (error.code === 11000) return res.status(200).json({ received: true, duplicate: true });
+    throw error;
+  }
+
+  try {
+    const resource = event.resource || {};
+    const orderId = resource.supplementary_data?.related_ids?.order_id;
+    const captureId = resource.id || null;
+    const eventStatus = {
+      'PAYMENT.CAPTURE.COMPLETED': 'COMPLETED',
+      'PAYMENT.CAPTURE.PENDING': 'PENDING',
+      'PAYMENT.CAPTURE.DENIED': 'DENIED',
+      'PAYMENT.CAPTURE.REFUNDED': 'REFUNDED',
+      'PAYMENT.CAPTURE.REVERSED': 'REVERSED',
+    }[event.event_type];
+
+    if (orderId && eventStatus) {
+      await PayPalOrder.updateOne(
+        { paypalOrderId: orderId },
+        { $set: { status: eventStatus, ...(captureId ? { captureId } : {}) } },
+      );
+    }
+
+    await PayPalWebhookEvent.updateOne(
+      { eventId: event.id },
+      { $set: { status: 'PROCESSED', processedAt: new Date() } },
+    );
+    return res.status(200).json({ received: true });
+  } catch (error) {
+    await PayPalWebhookEvent.updateOne(
+      { eventId: event.id },
+      { $set: { status: 'FAILED' } },
+    );
+    throw error;
+  }
+}));
+
 router.use(requireAuth);
 const schema = z.object({ approvalId: z.string().regex(/^[a-f\\d]{24}$/i) });
 
