@@ -51,15 +51,20 @@ router.post('/webhooks', asyncHandler(async (req, res) => {
     return res.status(400).json({ message: 'Invalid PayPal webhook event.' });
   }
 
+  let eventRecord;
   try {
-    await PayPalWebhookEvent.create({
+    eventRecord = await PayPalWebhookEvent.create({
       eventId: event.id,
       eventType: event.event_type,
       status: 'RECEIVED',
     });
   } catch (error) {
-    if (error.code === 11000) return res.status(200).json({ received: true, duplicate: true });
-    throw error;
+    if (error.code !== 11000) throw error;
+    eventRecord = await PayPalWebhookEvent.findOne({ eventId: event.id });
+    if (eventRecord?.status === 'PROCESSED') {
+      return res.status(200).json({ received: true, duplicate: true });
+    }
+    // Retry a previously failed or interrupted event delivery.
   }
 
   try {
