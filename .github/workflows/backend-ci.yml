@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - feature/backend-auth
+      - feature/backend-mongodb
       - feature/backend-payments
   pull_request:
     paths:

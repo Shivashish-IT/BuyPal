@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
-import { pool } from '../db/pool.js';
+import { PayPalOrder } from '../models/PayPalOrder.js';
 import { env } from '../config/env.js';
 import { asyncHandler } from '../utils/async-handler.js';
 import { requireAuth } from '../middleware/require-auth.js';
@@ -9,7 +9,7 @@ import { requireAuth } from '../middleware/require-auth.js';
 const router = Router();
 const createOrderSchema = z.object({
   itemName: z.string().trim().min(1).max(120),
-  amount: z.string().regex(/^\d{1,7}\.\d{2}$/),
+  amount: z.string().regex(/^\d{1,7}\.\d{2}$/).refine(value => Number(value) > 0),
 });
 
 let accessToken;
@@ -24,11 +24,11 @@ async function getAccessToken() {
 
   if (accessToken && Date.now() < tokenExpiresAt - 60_000) return accessToken;
 
-  const basic = Buffer.from(`${env.paypal.clientId}:${env.paypal.clientSecret}`).toString('base64');
-  const response = await fetch(`${env.paypal.baseUrl}/v1/oauth2/token`, {
+  const basic = Buffer.from(\`\${env.paypal.clientId}:\${env.paypal.clientSecret}\`).toString('base64');
+  const response = await fetch(\`\${env.paypal.baseUrl}/v1/oauth2/token\`, {
     method: 'POST',
     headers: {
-      Authorization: `Basic ${basic}`,
+      Authorization: \`Basic \${basic}\`,
       'Content-Type': 'application/x-www-form-urlencoded',
     },
     body: 'grant_type=client_credentials',
@@ -47,10 +47,10 @@ async function getAccessToken() {
 }
 
 async function paypalCall(path, token, { method = 'GET', body, requestId } = {}) {
-  const response = await fetch(`${env.paypal.baseUrl}${path}`, {
+  const response = await fetch(\`\${env.paypal.baseUrl}\${path}\`, {
     method,
     headers: {
-      Authorization: `Bearer ${token}`,
+      Authorization: \`Bearer \${token}\`,
       'Content-Type': 'application/json',
       ...(requestId ? { 'PayPal-Request-Id': requestId } : {}),
     },
@@ -66,12 +66,12 @@ async function paypalCall(path, token, { method = 'GET', body, requestId } = {})
   return data;
 }
 
-// Demo integration endpoint: amount is supplied by the authenticated client.
-// Before production, derive price and currency from a server-validated cart/catalogue.
+// Demo integration: amount is supplied by the signed-in client.
+// Production must derive price and currency from a server-validated cart/catalogue.
 router.post('/orders', requireAuth, asyncHandler(async (req, res) => {
   const parsed = createOrderSchema.safeParse(req.body);
   if (!parsed.success) {
-    return res.status(400).json({ message: 'Provide an item name and an amount such as 19.99.' });
+    return res.status(400).json({ message: 'Provide an item name and a positive amount such as 19.99.' });
   }
 
   const token = await getAccessToken();
@@ -88,8 +88,8 @@ router.post('/orders', requireAuth, asyncHandler(async (req, res) => {
       application_context: {
         brand_name: 'BuyPal',
         user_action: 'PAY_NOW',
-        return_url: `${env.frontendOrigin}/checkout/paypal/return`,
-        cancel_url: `${env.frontendOrigin}/checkout/paypal/cancel`,
+        return_url: \`\${env.frontendOrigin}/checkout/paypal/return\`,
+        cancel_url: \`\${env.frontendOrigin}/checkout/paypal/cancel\`,
       },
     },
   });
@@ -101,47 +101,68 @@ router.post('/orders', requireAuth, asyncHandler(async (req, res) => {
     throw error;
   }
 
-  await pool.query(
-    `INSERT INTO paypal_orders (user_id, paypal_order_id, item_name, amount, currency, status)
-     VALUES ($1, $2, $3, $4, $5, $6)`,
-    [req.user.id, order.id, parsed.data.itemName, parsed.data.amount, env.paypal.currency, order.status || 'CREATED'],
-  );
-
-  return res.status(201).json({
-    orderId: order.id,
-    status: order.status,
-    approvalUrl,
+  await PayPalOrder.create({
+    userId: req.user.id,
+    paypalOrderId: order.id,
+    itemName: parsed.data.itemName,
+    amount: parsed.data.amount,
+    currency: env.paypal.currency,
+    status: order.status || 'CREATED',
   });
+
+  return res.status(201).json({ orderId: order.id, status: order.status, approvalUrl });
 }));
 
 router.post('/orders/:orderId/capture', requireAuth, asyncHandler(async (req, res) => {
-  const saved = await pool.query(
-    'SELECT paypal_order_id, status FROM paypal_orders WHERE paypal_order_id = $1 AND user_id = $2',
-    [req.params.orderId, req.user.id],
-  );
-  if (!saved.rowCount) return res.status(404).json({ message: 'PayPal order not found.' });
-  if (saved.rows[0].status === 'COMPLETED') {
+  const saved = await PayPalOrder.findOne({
+    paypalOrderId: req.params.orderId,
+    userId: req.user.id,
+  });
+  if (!saved) return res.status(404).json({ message: 'PayPal order not found.' });
+  if (saved.status === 'COMPLETED') {
     return res.json({ orderId: req.params.orderId, status: 'COMPLETED', alreadyCaptured: true });
+  }
+  if (saved.status === 'CAPTURING') {
+    return res.status(409).json({ message: 'This payment is already being captured. Please check again shortly.' });
   }
 
   const token = await getAccessToken();
-  const current = await paypalCall(`/v2/checkout/orders/${encodeURIComponent(req.params.orderId)}`, token);
+  const current = await paypalCall(\`/v2/checkout/orders/\${encodeURIComponent(req.params.orderId)}\`, token);
   if (current.status !== 'APPROVED') {
     return res.status(409).json({ message: 'The PayPal buyer has not approved this order yet.', status: current.status });
   }
 
-  const capture = await paypalCall(
-    `/v2/checkout/orders/${encodeURIComponent(req.params.orderId)}/capture`,
-    token,
-    { method: 'POST', body: {}, requestId: `buypal-${req.params.orderId}`.slice(0, 38) },
+  // Claim the capture atomically so two concurrent requests cannot both start it.
+  const claimed = await PayPalOrder.findOneAndUpdate(
+    { _id: saved._id, status: { $nin: ['COMPLETED', 'CAPTURING'] } },
+    { $set: { status: 'CAPTURING' } },
+    { new: true },
   );
-  const status = capture.status || 'PENDING';
-  await pool.query(
-    'UPDATE paypal_orders SET status = $1, updated_at = NOW() WHERE paypal_order_id = $2 AND user_id = $3',
-    [status, req.params.orderId, req.user.id],
-  );
+  if (!claimed) {
+    const latest = await PayPalOrder.findById(saved._id).lean();
+    if (latest?.status === 'COMPLETED') {
+      return res.json({ orderId: req.params.orderId, status: 'COMPLETED', alreadyCaptured: true });
+    }
+    return res.status(409).json({ message: 'This payment is already being processed. Please check again shortly.' });
+  }
 
-  return res.json({ orderId: capture.id, status });
+  try {
+    const capture = await paypalCall(
+      \`/v2/checkout/orders/\${encodeURIComponent(req.params.orderId)}/capture\`,
+      token,
+      { method: 'POST', body: {}, requestId: \`buypal-\${req.params.orderId}\`.slice(0, 38) },
+    );
+    const status = capture.status || 'PENDING';
+    const captureId = capture.purchase_units?.[0]?.payments?.captures?.[0]?.id || null;
+    await PayPalOrder.updateOne(
+      { _id: saved._id },
+      { $set: { status, captureId } },
+    );
+    return res.json({ orderId: capture.id, status });
+  } catch (error) {
+    await PayPalOrder.updateOne({ _id: saved._id, status: 'CAPTURING' }, { $set: { status: 'APPROVED' } });
+    throw error;
+  }
 }));
 
 export default router;
