@@ -80,10 +80,26 @@ router.post('/webhooks', asyncHandler(async (req, res) => {
     }[event.event_type];
 
     if (orderId && eventStatus) {
-      await PayPalOrder.updateOne(
-        { paypalOrderId: orderId },
-        { $set: { status: eventStatus, ...(captureId ? { captureId } : {}) } },
-      );
+      const savedOrder = await PayPalOrder.findOne({ paypalOrderId: orderId });
+      if (savedOrder) {
+        const eventAmount = resource.amount;
+        const amountMatches = !eventAmount || (
+          eventAmount.currency_code === savedOrder.currency &&
+          String(eventAmount.value) === savedOrder.amount
+        );
+        if (amountMatches) {
+          // Older pending/denied notifications must not overwrite a completed or refunded capture.
+          const terminalStatuses = ['COMPLETED', 'REFUNDED', 'REVERSED'];
+          const canAdvance = !terminalStatuses.includes(savedOrder.status) ||
+            ['REFUNDED', 'REVERSED'].includes(eventStatus);
+          if (canAdvance) {
+            await PayPalOrder.updateOne(
+              { _id: savedOrder._id },
+              { $set: { status: eventStatus, ...(captureId ? { captureId } : {}) } },
+            );
+          }
+        }
+      }
     }
 
     await PayPalWebhookEvent.updateOne(
@@ -101,7 +117,7 @@ router.post('/webhooks', asyncHandler(async (req, res) => {
 }));
 
 router.use(requireAuth);
-const schema = z.object({ approvalId: z.string().regex(/^[a-f\\d]{24}$/i) });
+const schema = z.object({ approvalId: z.string().regex(/^[a-f\d]{24}$/i) });
 
 let accessToken;
 let expiresAt = 0;
